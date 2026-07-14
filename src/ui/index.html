@@ -144,6 +144,7 @@
   <h1>langfuse<span>-relay</span></h1>
   <nav>
     <button id="tab-traces" class="active">Traces</button>
+    <button id="tab-sessions">Sessions</button>
     <button id="tab-dash">Dashboard</button>
   </nav>
   <div id="stats"></div>
@@ -160,6 +161,7 @@
       </div>
     </div>
   </div>
+  <div id="sessions-page" style="display:none;padding:20px;overflow-y:auto;height:100%"></div>
   <div id="dash-page"></div>
 </main>
 <script>
@@ -186,11 +188,18 @@ async function loadStats() {
 }
 
 /* ---------- trace list ---------- */
+let sessionFilter = null;
 async function loadTraces() {
   const q = $('#search').value.trim();
-  const url = '/api/traces?limit=100' + (q ? '&q=' + encodeURIComponent(q) : '');
+  const url = '/api/traces?limit=100' + (q ? '&q=' + encodeURIComponent(q) : '') +
+    (sessionFilter ? '&session=' + encodeURIComponent(sessionFilter) : '');
   const { traces } = await (await fetch(url)).json();
-  $('#trace-list').innerHTML = traces.map((t) => `
+  const chip = sessionFilter
+    ? `<div style="padding:0 12px 8px"><span class="badge" style="color:var(--accent);border-color:var(--accent)">
+        session: ${esc(sessionFilter.slice(0, 24))}${sessionFilter.length > 24 ? '…' : ''}
+        <a href="#" id="clear-session" style="color:var(--muted);text-decoration:none;margin-left:6px">✕</a></span></div>`
+    : '';
+  $('#trace-list').innerHTML = chip + traces.map((t) => `
     <div class="trace-row${t.trace_id === activeTraceId ? ' active' : ''}" data-id="${t.trace_id}">
       <div class="trace-title">${esc(t.root_name || t.model || t.trace_id.slice(0, 16))}</div>
       <div class="trace-meta">
@@ -388,6 +397,38 @@ async function openTrace(traceId, keepSelection = false) {
   renderSpanDetail();
 }
 
+/* ---------- sessions page ---------- */
+async function loadSessions() {
+  const { sessions } = await (await fetch('/api/sessions')).json();
+  $('#sessions-page').innerHTML = `
+    <div class="chart-box"><h3>Sessions (${sessions.length})</h3>
+    ${sessions.map((s) => `
+      <div class="trace-row" data-session="${esc(s.session_id)}" style="border-radius:6px">
+        <div class="trace-title mono">${esc(s.session_id)}</div>
+        <div class="trace-meta">
+          <span>${new Date(s.first_ms).toLocaleString()} → ${new Date(s.last_ms).toLocaleTimeString()}</span>
+          <span class="badge">${esc(s.service)}</span>
+          <span class="badge">${s.trace_count} traces · ${s.span_count} spans</span>
+          <span class="badge llm">${s.llm_calls} LLM · ${fmtTok(s.total_tokens)} tok</span>
+          ${s.cost_usd > 0 ? `<span class="badge">$${s.cost_usd.toFixed(4)}</span>` : ''}
+          ${s.error_count > 0 ? `<span class="badge err">${s.error_count} err</span>` : ''}
+        </div>
+      </div>`).join('') ||
+      `<div style="color:var(--muted);font-size:13px;line-height:1.8">No sessions yet.<br>
+       Sessions group traces by conversation: NeMo Relay exports include one automatically;
+       standard <code>session.id</code> / <code>gen_ai.conversation.id</code> attributes work too;
+       proxy callers can send an <code>x-session-id</code> header.</div>`}
+    </div>`;
+}
+$('#sessions-page').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-session]');
+  if (!row) return;
+  sessionFilter = row.dataset.session;
+  activeTraceId = null;
+  switchPage('traces');
+  loadTraces();
+});
+
 /* ---------- dashboard page ---------- */
 async function loadDashboard() {
   const [{ totals, services, models }, { traces }] = await Promise.all([
@@ -433,8 +474,14 @@ async function loadDashboard() {
 
 /* ---------- events ---------- */
 $('#trace-list').addEventListener('click', (e) => {
+  if (e.target.id === 'clear-session') {
+    e.preventDefault();
+    sessionFilter = null;
+    loadTraces();
+    return;
+  }
   const row = e.target.closest('.trace-row');
-  if (row) openTrace(row.dataset.id);
+  if (row?.dataset.id) openTrace(row.dataset.id);
 });
 $('#detail-pane').addEventListener('click', (e) => {
   const viewBtn = e.target.closest('.view-tabs button');
@@ -453,18 +500,23 @@ let page = 'traces';
 function switchPage(next) {
   page = next;
   $('#traces-page').style.display = page === 'traces' ? 'grid' : 'none';
+  $('#sessions-page').style.display = page === 'sessions' ? 'block' : 'none';
   $('#dash-page').style.display = page === 'dash' ? 'block' : 'none';
   $('#tab-traces').classList.toggle('active', page === 'traces');
+  $('#tab-sessions').classList.toggle('active', page === 'sessions');
   $('#tab-dash').classList.toggle('active', page === 'dash');
   if (page === 'dash') loadDashboard();
+  if (page === 'sessions') loadSessions();
 }
 $('#tab-traces').addEventListener('click', () => switchPage('traces'));
+$('#tab-sessions').addEventListener('click', () => switchPage('sessions'));
 $('#tab-dash').addEventListener('click', () => switchPage('dash'));
 
 loadStats(); loadTraces();
 setInterval(() => {
   loadStats();
   if (page === 'traces') { loadTraces(); if (activeTraceId) openTrace(activeTraceId, true); }
+  else if (page === 'sessions') loadSessions();
   else loadDashboard();
 }, 5000);
 </script>

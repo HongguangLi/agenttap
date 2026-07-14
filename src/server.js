@@ -129,6 +129,17 @@ export function createServer({
             offset: Number(url.searchParams.get('offset') ?? 0),
             service: url.searchParams.get('service'),
             q: url.searchParams.get('q'),
+            session: url.searchParams.get('session'),
+          }),
+        });
+        return;
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/sessions') {
+        sendJson(res, 200, {
+          sessions: store.listSessions({
+            limit: Math.min(Number(url.searchParams.get('limit') ?? 100), 500),
+            offset: Number(url.searchParams.get('offset') ?? 0),
           }),
         });
         return;

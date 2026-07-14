@@ -14,8 +14,8 @@ const MAX_RECORDED_RESPONSE = 8 * 1024 * 1024;
 const SKIP_HEADERS = new Set([
   'host', 'connection', 'content-length', 'transfer-encoding',
   'keep-alive', 'upgrade', 'proxy-authorization', 'te', 'trailer',
-  // Relay-internal auth header must never leak to the upstream.
-  'x-langfuse-relay-token',
+  // Relay-internal headers must never leak to the upstream.
+  'x-langfuse-relay-token', 'x-session-id', 'x-service-name',
 ]);
 
 function forwardHeaders(req) {
@@ -203,6 +203,8 @@ export async function handleProxyRequest(req, res, body, { provider, upstream, s
           ? { 'gen_ai.prompt': messagesToText(request.messages) }
           : {}),
         ...(parsed.outputText ? { 'gen_ai.completion': parsed.outputText } : {}),
+        // Callers can group proxy calls into a session with x-session-id.
+        ...(req.headers['x-session-id'] ? { 'session.id': req.headers['x-session-id'] } : {}),
         'http.response.status_code': response.status,
         'server.address': upstream,
       },

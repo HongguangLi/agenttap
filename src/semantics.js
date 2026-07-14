@@ -189,6 +189,29 @@ function extractNemoRelay(attrs) {
   return out;
 }
 
+/**
+ * Extract a session/conversation identifier from any known convention.
+ * Exported separately so the store can backfill old rows.
+ */
+export function extractSessionId(attrs) {
+  const direct = firstDefined(
+    attrs['session.id'],
+    attrs['gen_ai.conversation.id'],
+    attrs['langfuse.session.id'],
+  );
+  if (direct) return String(direct);
+  // NeMo Relay tucks sessionId/sessionKey inside *_json metadata payloads.
+  for (const [key, value] of Object.entries(attrs)) {
+    if (!key.startsWith('nemo_relay.') || !key.endsWith('_json')) continue;
+    const parsed = tryParseJson(value);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const found = parsed.sessionId ?? parsed.session_id ?? parsed.sessionKey;
+      if (found) return String(found);
+    }
+  }
+  return null;
+}
+
 function guessSpanType(span) {
   const name = span.name.toLowerCase();
   if (/(llm|model|completion|generation|chat)/.test(name)) return 'llm';
@@ -230,5 +253,6 @@ export function extractSemantics(span) {
   if (merged.totalTokens === null && merged.promptTokens !== null && merged.completionTokens !== null) {
     merged.totalTokens = merged.promptTokens + merged.completionTokens;
   }
+  merged.sessionId = extractSessionId(attrs);
   return merged;
 }
