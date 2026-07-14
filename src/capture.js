@@ -199,9 +199,19 @@ export async function handleProxyRequest(req, res, body, { provider, upstream, s
         ...(parsed.completionTokens != null
           ? { 'gen_ai.usage.output_tokens': parsed.completionTokens }
           : {}),
-        ...(messagesToText(request.messages)
-          ? { 'gen_ai.prompt': messagesToText(request.messages) }
-          : {}),
+        // Anthropic carries the system prompt as a top-level field rather
+        // than a messages[] entry — prepend it so nothing is lost.
+        ...((() => {
+          const system = typeof request.system === 'string'
+            ? request.system
+            : Array.isArray(request.system)
+              ? request.system.map((b) => b?.text ?? '').join('\n')
+              : null;
+          const text = [system ? `[system] ${system}` : null, messagesToText(request.messages)]
+            .filter(Boolean)
+            .join('\n\n');
+          return text ? { 'gen_ai.prompt': text } : {};
+        })()),
         ...(parsed.outputText ? { 'gen_ai.completion': parsed.outputText } : {}),
         // Callers can group proxy calls into a session with x-session-id.
         ...(req.headers['x-session-id'] ? { 'session.id': req.headers['x-session-id'] } : {}),
