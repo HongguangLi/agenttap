@@ -1,8 +1,8 @@
 # langfuse-relay
 
-**Local-first LLM agent observability in a single process.**
+**Agent-native, local-first observability platform — in a single process.**
 
-A tiny OTLP trace collector + dashboard purpose-built for coding-agent power users — [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [OpenClaw](https://openclaw.ai), [opencode](https://github.com/sst/opencode), Hermes, [pi](https://github.com/badlogic/pi-mono) — who want to see every LLM call, token count, and tool execution their agents make, without running a fleet of containers.
+A tiny OTLP trace collector + dashboard purpose-built for coding-agent power users — [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [OpenClaw](https://openclaw.ai), [opencode](https://github.com/sst/opencode), Hermes, [pi](https://github.com/badlogic/pi-mono) — who want to see every LLM call, token count, and tool execution their agents make, without running a fleet of containers. Agent-native means it speaks the OTLP dialects agents actually emit (GenAI, OpenInference, NeMo Relay) out of the box; local-first means everything — collector, storage, dashboard — runs on your machine and your prompts never leave it.
 
 Inspired by two great projects and designed to sit between them:
 
@@ -19,35 +19,75 @@ Inspired by two great projects and designed to sit between them:
 └─────────────────────────┘                    └─────────────────────────────┘
 ```
 
-## Why not just self-host Langfuse?
+## How it differs from Langfuse
 
-Langfuse is excellent — and if you need team features, evaluations, prompt management, or production scale, use it. But for a single developer tracing local agents:
+Langfuse is excellent — and if you need team features, evaluations, prompt management, or production scale, use it. The two tools sit at different points:
 
 | | Langfuse (self-hosted) | langfuse-relay |
 |---|---|---|
+| Positioning | Full LLM engineering platform (tracing, evals, prompt mgmt, teams) | Agent-native local tracing for one developer's machines |
 | Processes | 6 containers | 1 Node process |
 | Storage | Postgres + ClickHouse + Redis + MinIO | 1 SQLite file |
 | Dependencies | Docker Compose | `protobufjs` (only) |
-| Setup | env file with 10+ secrets | `npx langfuse-relay` |
+| Setup | env file with 10+ secrets | clone → `npm install` → `npm start` |
 | RAM footprint | ~2 GB+ | ~50 MB |
 | Semantic conventions | GenAI, OpenInference, Langfuse SDK | GenAI, OpenInference, NeMo Relay |
+| Agent `nemo_relay.*` traces | Stored but Input/Output show null (data buried in Metadata) | Input/Output parsed and rendered natively |
+| Data location | Your containers | One local file you can `cp`, `grep`, or delete |
 
-## Quickstart
+**And from NeMo Relay:** NeMo Relay is a capture/export layer with no storage or UI by design — it needs a backend to send traces *to*. langfuse-relay is that backend (the lightest possible one). They compose: NeMo Relay instruments your agent runtime, langfuse-relay stores and visualizes what it exports.
 
-Requires Node.js ≥ 22.13 (uses the built-in `node:sqlite`).
+## Install
+
+Requires **Node.js ≥ 22.13** (uses the built-in `node:sqlite` — no database server needed).
 
 ```bash
+# 1. Get the code
 git clone https://github.com/HongguangLi/langfuse-relay
-cd langfuse-relay && npm install
+cd langfuse-relay
+
+# 2. Install the single dependency
+npm install
+
+# 3. Run
 npm start
 ```
 
-Then open http://127.0.0.1:4318 and point any OTLP exporter at `http://127.0.0.1:4318/v1/traces`.
+You should see:
 
-Send a synthetic trace to see the dashboard working:
+```
+langfuse-relay listening on http://127.0.0.1:4318
+  dashboard   http://127.0.0.1:4318/
+  OTLP ingest http://127.0.0.1:4318/v1/traces
+  db          ~/.langfuse-relay/traces.db
+```
+
+**Verify it works** — send a synthetic agent trace and open the dashboard:
 
 ```bash
 node examples/send-test-trace.js
+# then open http://127.0.0.1:4318
+```
+
+**Connect your agent** — point its OTLP exporter at `http://127.0.0.1:4318/v1/traces` (see the [per-agent guides](#agent-integration-guides) below).
+
+**Run it persistently** (optional) — as a systemd user service:
+
+```ini
+# ~/.config/systemd/user/langfuse-relay.service
+[Unit]
+Description=langfuse-relay local agent observability
+
+[Service]
+ExecStart=/usr/bin/env node /path/to/langfuse-relay/src/cli.js
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user enable --now langfuse-relay
 ```
 
 ## What it understands
