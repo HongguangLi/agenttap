@@ -1,0 +1,37 @@
+{
+  "name": "langfuse-relay",
+  "version": "0.1.0",
+  "description": "Local-first LLM agent observability: a single-process OTLP trace collector + dashboard for Claude Code, Codex, OpenClaw, opencode, Hermes, pi and other coding agents. Inspired by Langfuse (visualization) and NVIDIA NeMo Relay (protocol-agnostic capture).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "langfuse-relay": "src/cli.js"
+  },
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node --test tests/"
+  },
+  "keywords": [
+    "observability",
+    "opentelemetry",
+    "otlp",
+    "llm",
+    "agent",
+    "tracing",
+    "langfuse",
+    "nemo-relay",
+    "openinference",
+    "claude-code",
+    "codex",
+    "openclaw",
+    "local-first",
+    "sqlite"
+  ],
+  "dependencies": {
+    "protobufjs": "^7.4.0"
+  }
+}
