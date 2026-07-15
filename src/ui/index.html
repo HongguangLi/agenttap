@@ -506,8 +506,18 @@ async function renderDashboard() {
   const now = Date.now(), buckets = Array.from({length:24}, () => ({t:0, tok:0}));
   for (const t of traces) { const age = Math.floor((now - t.start_ms)/3600000);
     if (age>=0 && age<24) { buckets[23-age].t++; buckets[23-age].tok += t.total_tokens??0; } }
-  const maxT = Math.max(...buckets.map(b=>b.t), 1), bw = 100/24;
-  const bars = buckets.map((b,i) => `<rect x="${i*bw+0.4}%" y="${100-b.t/maxT*92}%" width="${bw-0.8}%" height="${b.t/maxT*92}%" rx="2" fill="var(--accent)"><title>${b.t} traces · ${fmtTok(b.tok)} tok</title></rect>`).join('');
+  const maxT = Math.max(...buckets.map(b=>b.t), 1);
+  // Proper axed bar chart: y ticks + gridlines, per-bar counts, hour labels.
+  const CW=720, CH=182, PL=30, PR=12, PT=20, PB=26, plotH=CH-PT-PB, slot=(CW-PL-PR)/24, barW=Math.min(slot*0.6, 18);
+  const yFor = v => PT + plotH*(1 - v/maxT);
+  const ticks = maxT<=1 ? [0,1] : maxT<=3 ? Array.from({length:maxT+1},(_,i)=>i) : [0, Math.round(maxT/2), maxT];
+  const grid = ticks.map(v => `<line x1="${PL}" y1="${yFor(v).toFixed(1)}" x2="${CW-PR}" y2="${yFor(v).toFixed(1)}" stroke="var(--border)"/><text x="${PL-6}" y="${(yFor(v)+3).toFixed(1)}" text-anchor="end" fill="var(--muted)" font-size="10">${v}</text>`).join('');
+  const bars = buckets.map((b,i) => { const x=PL+slot*i+(slot-barW)/2, h=plotH*(b.t/maxT), y=PT+plotH-h;
+    const lab = b.t>0 ? `<text x="${(x+barW/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" fill="var(--text)" font-size="10" font-weight="600">${b.t}</text>` : '';
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h,0).toFixed(1)}" rx="2.5" fill="var(--accent)"><title>${new Date(now-(23-i)*3600000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} — ${b.t} traces · ${fmtTok(b.tok)} tok</title></rect>${lab}`; }).join('');
+  const xlab = [0,4,8,12,16,20,23].map(i => { const x=PL+slot*i+slot/2, t=i===23?'now':new Date(now-(23-i)*3600000).toLocaleTimeString([],{hour:'numeric'}).replace(/\s/g,'');
+    return `<text x="${x.toFixed(1)}" y="${CH-8}" text-anchor="middle" fill="var(--muted)" font-size="10">${t}</text>`; }).join('');
+  const chartSvg = `<svg width="100%" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="xMidYMid meet" style="font-family:'IBM Plex Mono',ui-monospace,monospace">${grid}${bars}${xlab}</svg>`;
   const maxMTok = Math.max(...models.map(m=>(m.prompt_tokens??0)+(m.completion_tokens??0)), 1);
   $('#content').innerHTML = `<div class="page-scroll">
     <div class="cards">
@@ -517,7 +527,7 @@ async function renderDashboard() {
       <div class="card"><div class="cnum">${fmtTok(totals.prompt_tokens)}</div><div class="clbl">Input tokens</div></div>
       <div class="card"><div class="cnum">${fmtTok(totals.completion_tokens)}</div><div class="clbl">Output tokens</div></div>
       <div class="card"><div class="cnum">$${(totals.cost_usd??0).toFixed(4)}</div><div class="clbl">Cost</div></div></div>
-    <div class="chart-box"><h3>Traces — last 24 hours</h3><svg width="100%" height="120">${bars}</svg></div>
+    <div class="chart-box"><h3>Traces — last 24 hours (bar = count per hour)</h3>${chartSvg}</div>
     <div class="chart-box"><h3>Token usage by model</h3>${models.map(m => { const tk=(m.prompt_tokens??0)+(m.completion_tokens??0);
       return `<div class="hbar-row"><span title="${esc(m.model)}">${esc(m.model)}</span>
         <div class="hbar-track"><div class="hbar-fill" style="width:${tk/maxMTok*100}%"></div></div>
