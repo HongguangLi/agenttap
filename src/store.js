@@ -67,9 +67,23 @@ export class SpanStore {
         attributes_json, resource_json, events_json, received_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (trace_id, span_id) DO UPDATE SET
-        end_ns = excluded.end_ns,
-        duration_ms = excluded.duration_ms,
-        status_code = excluded.status_code,
+        -- Merge, don't clobber: a span can be assembled from several records
+        -- (Claude Code's api_request + assistant_response for one call, or a
+        -- turn root extended across log flushes). Keep the earliest start,
+        -- extend the end, and fill empty fields from whichever record has them.
+        end_ns = CASE WHEN CAST(excluded.end_ns AS INTEGER) > CAST(end_ns AS INTEGER)
+                      THEN excluded.end_ns ELSE end_ns END,
+        duration_ms = MAX(COALESCE(duration_ms, 0), COALESCE(excluded.duration_ms, 0)),
+        status_code = CASE WHEN excluded.status_code = 'ERROR' THEN 'ERROR' ELSE status_code END,
+        model = COALESCE(model, excluded.model),
+        input_text = COALESCE(input_text, excluded.input_text),
+        output_text = COALESCE(output_text, excluded.output_text),
+        prompt_tokens = COALESCE(prompt_tokens, excluded.prompt_tokens),
+        completion_tokens = COALESCE(completion_tokens, excluded.completion_tokens),
+        total_tokens = COALESCE(total_tokens, excluded.total_tokens),
+        cost_usd = COALESCE(cost_usd, excluded.cost_usd),
+        session_id = COALESCE(session_id, excluded.session_id),
+        user_id = COALESCE(user_id, excluded.user_id),
         attributes_json = excluded.attributes_json,
         events_json = excluded.events_json
     `);

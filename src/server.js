@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { decodeTraceExport, decodeLogsExport } from './otlp.js';
 import { extractSemantics } from './semantics.js';
-import { logEventToSpan } from './logs.js';
+import { logEventsToSpans } from './logs.js';
 import { SpanStore } from './store.js';
 import { handleProxyRequest } from './capture.js';
 
@@ -146,7 +146,7 @@ export function createServer({
         const body = await readOtlpBody(req, maxBodyBytes);
         const contentType = req.headers['content-type'] ?? 'application/x-protobuf';
         const events = await decodeLogsExport(body, contentType);
-        const spans = events.map(logEventToSpan).filter(Boolean);
+        const spans = logEventsToSpans(events);
         if (spans.length > 0) {
           store.insertSpans(spans);
           logger.log(`[ingest] ${spans.length} span(s) from ${spans[0].service} logs`);
